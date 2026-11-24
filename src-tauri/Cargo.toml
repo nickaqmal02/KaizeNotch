@@ -1,6 +1,6 @@
 [package]
 name = "kaizenotch"
-version = "0.1.1"
+version = "0.1.2"
 description = "Pomodoro timer and habit tracker that sits at the top of your screen"
 authors = ["Nik Abdul Aqmal Bin Zunaidi"]
 license = "MIT"

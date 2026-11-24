@@ -104,7 +104,7 @@ The report template (`src-tauri/assets/report_template.html`) is a copy of
 
 ## Releasing
 
-1. Set the new version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`.
+1. Set the new version in `src-tauri/tauri.conf.json` (version and the window `url`), `src-tauri/Cargo.toml`, `package.json` and the two `?v=` in `ui/index.html`. `cargo test` fails if they disagree.
 2. `git tag v0.2.0 && git push origin v0.2.0`. The Release workflow builds and publishes the files.
 3. Update `bucket/kaizenotch.json` in the scoop-bucket repo (version, url, hash from `SHA256SUMS.txt`).
 

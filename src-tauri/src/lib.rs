@@ -57,6 +57,7 @@ struct State {
     categories: Vec<CategoryView>,
     today_minutes: HashMap<String, f64>,
     today_done: HashSet<String>,
+    version: &'static str,
 }
 
 fn built_in_categories() -> Vec<CategoryView> {
@@ -93,6 +94,7 @@ fn state_of(app: &App) -> State {
         categories,
         today_minutes,
         today_done,
+        version: env!("CARGO_PKG_VERSION"),
     }
 }
 
@@ -540,4 +542,37 @@ pub fn report_json_cli(args: &[String]) -> Option<String> {
         .unwrap_or_else(store::default_folder);
     let shared = args.iter().any(|a| a == "--shared");
     Some(String::from_utf8(report::json_bytes(&Store::new(&folder), shared)).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    // Windows' web view keeps old copies of files it has seen under the same address, so an update
+    // would show the previous version's page. Every address carries the version to prevent that.
+    #[test]
+    fn page_addresses_carry_the_app_version() {
+        let v = env!("CARGO_PKG_VERSION");
+        let html = include_str!("../../ui/index.html");
+        assert!(
+            html.contains(&format!("style.css?v={v}")),
+            "ui/index.html: style.css?v= is not {v}"
+        );
+        assert!(
+            html.contains(&format!("app.js?v={v}")),
+            "ui/index.html: app.js?v= is not {v}"
+        );
+        let conf = include_str!("../tauri.conf.json");
+        assert!(
+            conf.contains(&format!("\"version\": \"{v}\"")),
+            "tauri.conf.json version is not {v}"
+        );
+        assert!(
+            conf.contains(&format!("index.html?v={v}")),
+            "tauri.conf.json window url is not index.html?v={v}"
+        );
+        let pkg = include_str!("../../package.json");
+        assert!(
+            pkg.contains(&format!("\"version\": \"{v}\"")),
+            "package.json version is not {v}"
+        );
+    }
 }

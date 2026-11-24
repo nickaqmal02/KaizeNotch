@@ -375,7 +375,7 @@ function renderPanel() {
   const add = ui.adding
     ? `<div class="tile add" style="padding:8px"><input type="text" id="newName" maxlength="${MAX_NAME}" placeholder="Name, then Enter" value="${esc(ui.newName)}" style="width:100%;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;outline:none"></div>`
     : `<button class="tile add" data-act="add" title="Add an activity">+</button>`;
-  const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today</span>`;
+  const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today · v${esc(S.version || "?")}</span>`;
   $("#panel").innerHTML = `${statusHTML()}${tabsHTML()}${formHTML()}
     <div class="grid">${list.map(tileHTML).join("")}${add}</div>
     <div class="foot">${foot}<span class="links">${share.available ? `<button data-act="share">${share.state === "on" ? '<span class="live"></span>Sharing is on' : "Share on the web"}</button>` : ""}<button data-act="report">Open my report ↗</button></span></div>`;
