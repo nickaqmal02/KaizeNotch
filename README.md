@@ -35,7 +35,9 @@ It needs Windows 10 or 11. The installer fetches Microsoft's WebView2 runtime if
 | ✓ on a tile | "I already did it": logs the habit without running the timer |
 | Pencil on a tile | Change the name, length, break, tab, choices, or habit / time only |
 | **+** after the tabs | Add your own category |
-| Tray icon | Open My Report, Share My Report on the Web, Start at Login, Quit |
+| **Share on the web** (bottom of the panel) | Get a link to your report, copy it, or stop sharing |
+| **✕** (top right of the panel) | Quit KaizeNotch |
+| Tray icon | The same: Open My Report, Share My Report on the Web, Start at Login, Quit |
 
 The four built-in tabs are Academic, Health, Soul and Personal. Academic activities share one
 "Study" habit; every other activity is its own habit unless you turn that off.
@@ -54,7 +56,7 @@ session) and `report.html` (the report, rebuilt after every session).
 
 ## Sharing (off until you turn it on)
 
-Tray icon → **Share My Report on the Web…** gives you a private link like
+**Share on the web** at the bottom of the panel (or the tray icon → **Share My Report on the Web…**) gives you a private link like
 `https://…cloudfront.net/r/AbC123xyz789` that you can open on your phone or send to a friend.
 
 - No account, no password. The app gets a random link and a secret; the secret is kept in

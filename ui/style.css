@@ -68,6 +68,12 @@ button, input, select { font: inherit; color: inherit; }
 .round:hover { background: rgba(255,255,255,.18); transform: scale(1.06); }
 .round svg { width: 14px; height: 14px; }
 
+.toprow { display: flex; align-items: center; gap: 6px; }
+.toprow .tabs { flex: 1; min-width: 0; }
+.quit { flex: none; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.quit:hover { background: var(--red); color: #fff; }
+.quit svg { width: 11px; height: 11px; }
+.quitbtn { background: var(--red) !important; color: #fff !important; }
 .tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
@@ -140,6 +146,9 @@ button, input, select { font: inherit; color: inherit; }
 .foot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); }
 .foot button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 11px; }
 .foot button:hover { color: var(--text); }
+.foot .links { display: flex; gap: 8px; align-items: center; }
+.foot .live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; }
+.form .row > span:nth-child(2) { line-height: 1.35; }
 .flash { color: var(--green); font-weight: 600; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

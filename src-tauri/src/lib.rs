@@ -246,6 +246,68 @@ fn open_report(handle: AppHandle) {
     open_report_now(&handle);
 }
 
+// Sharing, for the panel (the tray menu has the same actions)
+fn share_json(app: &App) -> serde_json::Value {
+    let Some(share) = &app.share else {
+        return serde_json::json!({"available": false, "state": "off"});
+    };
+    let (state, url, updated) = match share.view() {
+        View::Off => ("off", None, None),
+        View::Working => ("working", None, None),
+        View::On { url, last_upload } => (
+            "on",
+            Some(url),
+            last_upload.map(|t| t.with_timezone(&Local).format("%d %b, %H:%M").to_string()),
+        ),
+    };
+    serde_json::json!({"available": true, "state": state, "url": url, "updated": updated, "error": share.last_error()})
+}
+
+#[tauri::command]
+fn share_info(app: tauri::State<App>) -> serde_json::Value {
+    share_json(&app)
+}
+
+#[tauri::command]
+async fn share_start(handle: AppHandle) -> serde_json::Value {
+    let share = handle.state::<App>().share.clone();
+    if let Some(share) = share {
+        share.start().await;
+    }
+    refresh_tray(&handle);
+    share_json(&handle.state::<App>())
+}
+
+#[tauri::command]
+async fn share_stop(handle: AppHandle) -> serde_json::Value {
+    let share = handle.state::<App>().share.clone();
+    if let Some(share) = share {
+        share.stop().await;
+    }
+    refresh_tray(&handle);
+    share_json(&handle.state::<App>())
+}
+
+#[tauri::command]
+fn share_copy(handle: AppHandle, app: tauri::State<App>) {
+    if let Some(url) = app.share.as_ref().and_then(|s| s.link()) {
+        let _ = handle.clipboard().write_text(url);
+    }
+}
+
+#[tauri::command]
+fn share_open(handle: AppHandle, app: tauri::State<App>) {
+    if let Some(url) = app.share.as_ref().and_then(|s| s.link()) {
+        let _ = handle.opener().open_url(url, None::<&str>);
+    }
+}
+
+// The x on the panel: close KaizeNotch completely (the tray's Quit does the same)
+#[tauri::command]
+fn quit_app(handle: AppHandle) {
+    handle.exit(0);
+}
+
 fn open_report_now(handle: &AppHandle) {
     let app = handle.state::<App>();
     if let Ok(path) = report::write_local(&app.store()) {
@@ -423,7 +485,13 @@ pub fn run() {
             log_session,
             set_expanded,
             focus_window,
-            open_report
+            open_report,
+            share_info,
+            share_start,
+            share_stop,
+            share_copy,
+            share_open,
+            quit_app
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

@@ -19,7 +19,9 @@ const ui = {
   editing: null, edit: {},
   choosing: null, choosingTick: false,
   flash: null, problem: "",
+  sharing: false, quitting: false,
 };
+let share = { available: false, state: "off" };   // from Rust: state off | working | on, url, updated, error
 let run = null;    // { name, detail, category, planned, startedAt, endAt, remaining, paused }
 let rest = null;   // { name, endAt, remaining, paused }
 let collapseTimer = null;
@@ -169,7 +171,7 @@ setInterval(() => {
 }, 250);
 
 // ---------- edits ----------
-function typing() { return ui.adding || ui.addingCat || ui.editing !== null; }
+function typing() { return ui.adding || ui.addingCat || ui.editing !== null || ui.sharing || ui.quitting; }
 
 async function saveSubjects(list) {
   S = await call("save_subjects", { subjects: list });
@@ -213,7 +215,7 @@ async function saveEdit() {
   await saveSubjects(list);
 }
 
-function cancelEdit() { ui.editing = null; ui.adding = false; ui.addingCat = false; ui.catProblem = ""; render(); }
+function cancelEdit() { ui.editing = null; ui.adding = false; ui.addingCat = false; ui.sharing = false; ui.quitting = false; ui.catProblem = ""; render(); }
 
 async function removeSubject(name) {
   ui.editing = null;
@@ -287,7 +289,8 @@ function tabsHTML() {
     const x = on && !c.builtIn ? `<span data-act="rmcat" data-key="${esc(c.key)}" title="Remove this tab">×</span>` : "";
     return `<button class="tab ${on ? "on" : ""}" style="--c:${esc(c.color)}" data-act="tab" data-key="${esc(c.key)}"><span class="swatch"></span>${esc(c.label)}${x}</button>`;
   }).join("");
-  return `<div class="tabs">${tabs}<button class="tab add" data-act="addcat" title="Add a category">+</button></div>`;
+  return `<div class="toprow"><div class="tabs">${tabs}<button class="tab add" data-act="addcat" title="Add a category">+</button></div>
+    <button class="quit" data-act="askquit" title="Quit KaizeNotch">${ICON.close}</button></div>`;
 }
 
 function tileHTML(s) {
@@ -305,7 +308,36 @@ function tileHTML(s) {
   </div>`;
 }
 
+function shareHTML() {
+  const err = share.error ? `<div class="problem">${esc(share.error)}</div>` : "";
+  if (share.state === "working") {
+    return `<div class="form"><div class="row"><span>Sharing</span><span style="color:var(--muted)">Working…</span></div></div>`;
+  }
+  if (share.state === "on") {
+    return `<div class="form">
+      <div class="row"><span>Your link</span><input type="text" id="shareUrl" readonly value="${esc(share.url)}"></div>
+      <div class="row"><span></span><span style="color:var(--muted)">${share.updated ? "Updated " + esc(share.updated) : "First upload is on its way"} · anyone with the link can see your habits and totals</span></div>
+      ${err}
+      <div class="actions"><button class="pillbtn danger" data-act="sharestop">Stop sharing</button><span style="flex:1"></span>
+        <button class="pillbtn" data-act="cancel">Close</button><button class="pillbtn" data-act="shareopen">Open</button><button class="pillbtn primary" data-act="sharecopy">Copy link</button></div>
+    </div>`;
+  }
+  return `<div class="form">
+    <div class="row"><span>Share</span><span>Put a read-only copy of your report on the web and get a link for your phone or a friend.</span></div>
+    <div class="row"><span></span><span style="color:var(--muted)">Only habits, streaks and totals are uploaded, never your session times. No account needed. You can stop any time.</span></div>
+    ${err}
+    <div class="actions"><button class="pillbtn" data-act="cancel">Cancel</button><button class="pillbtn primary" data-act="sharestart">Create my link</button></div>
+  </div>`;
+}
+
 function formHTML() {
+  if (ui.quitting) {
+    return `<div class="form">
+      <div class="row"><span>Quit?</span><span>KaizeNotch closes and the pill disappears until you open it again.${run ? " The running session is saved first." : ""}</span></div>
+      <div class="actions"><button class="pillbtn" data-act="cancel">Cancel</button><button class="pillbtn primary quitbtn" data-act="quit">Quit KaizeNotch</button></div>
+    </div>`;
+  }
+  if (ui.sharing) return shareHTML();
   if (ui.addingCat) {
     return `<div class="form">
       <div class="row"><span>New tab</span><input type="text" id="catName" maxlength="16" placeholder="e.g. Quran Club" value="${esc(ui.catName)}"></div>
@@ -346,7 +378,7 @@ function renderPanel() {
   const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today</span>`;
   $("#panel").innerHTML = `${statusHTML()}${tabsHTML()}${formHTML()}
     <div class="grid">${list.map(tileHTML).join("")}${add}</div>
-    <div class="foot">${foot}<button data-act="report">Open my report ↗</button></div>`;
+    <div class="foot">${foot}<span class="links">${share.available ? `<button data-act="share">${share.state === "on" ? '<span class="live"></span>Sharing is on' : "Share on the web"}</button>` : ""}<button data-act="report">Open my report ↗</button></span></div>`;
 }
 
 function render() {
@@ -444,6 +476,28 @@ document.addEventListener("click", async (ev) => {
     case "brk+": ui.edit.breakMinutes = Math.min(60, ui.edit.breakMinutes + 1); render(); break;
     case "brk-": ui.edit.breakMinutes = Math.max(0, ui.edit.breakMinutes - 1); render(); break;
     case "report": invoke("open_report"); break;
+    case "askquit": cancelEdit(); ui.quitting = true; render(); break;
+    case "quit": if (run) await stop(false); invoke("quit_app"); break;
+    case "share":
+      cancelEdit();
+      ui.sharing = true;
+      share = await invoke("share_info");
+      render();
+      break;
+    case "sharestart":
+      share = { ...share, state: "working", error: null };
+      render();
+      share = await invoke("share_start");
+      render();
+      break;
+    case "sharestop":
+      share = { ...share, state: "working", error: null };
+      render();
+      share = await invoke("share_stop");
+      render();
+      break;
+    case "sharecopy": await invoke("share_copy"); flash("Link copied", 3); break;
+    case "shareopen": invoke("share_open"); break;
   }
 });
 
@@ -473,5 +527,6 @@ document.addEventListener("contextmenu", (ev) => ev.preventDefault());
 // ---------- go ----------
 (async () => {
   S = await invoke("get_state");
+  share = await invoke("share_info");
   render();
 })();
