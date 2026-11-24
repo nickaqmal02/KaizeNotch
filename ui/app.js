@@ -247,14 +247,20 @@ async function removeCategory(key) {
 }
 
 // ---------- drawing ----------
+// "calm" | "soon" | "final", plus last10 for the faster heartbeat and paused to rest the motion
+function urgencyClass() {
+  const t0 = run || rest;
+  return urgency() + (run && !run.paused && run.remaining <= 10 ? " last10" : "") + (t0 && t0.paused ? " paused" : "");
+}
+
 function renderPill() {
   const pill = $("#pill");
-  pill.className = urgency();
+  pill.className = urgencyClass();
   if (run) {
     const c = cat(run.category).color;
-    pill.innerHTML = `<span class="dot" style="background:${c}"></span><span class="name">${esc(run.detail || run.name)}</span><span class="clock">${clock(run.remaining)}</span>${run.paused ? '<span class="muted">paused</span>' : ""}`;
+    pill.innerHTML = `<span class="sheen"></span><span class="dot live" style="background:${c}"></span><span class="name">${esc(run.detail || run.name)}</span><span class="clock">${clock(run.remaining)}</span>${run.paused ? '<span class="muted">paused</span>' : ""}`;
   } else if (rest) {
-    pill.innerHTML = `<span class="dot" style="background:var(--blue)"></span><span class="muted">Break</span><span class="clock">${clock(rest.remaining)}</span>`;
+    pill.innerHTML = `<span class="sheen"></span><span class="dot live" style="background:var(--blue)"></span><span class="muted">Break</span><span class="clock">${clock(rest.remaining)}</span>`;
   } else if (ui.flash) {
     pill.innerHTML = `<span class="flash">${esc(ui.flash)}</span>`;
   } else {
@@ -265,7 +271,7 @@ function renderPill() {
 function statusHTML() {
   if (run) {
     const u = urgency();
-    return `<div class="status ${u}" style="--c:${cat(run.category).color}">
+    return `<div class="status ${u}${run.remaining <= 10 && !run.paused ? " last10" : ""}" style="--c:${cat(run.category).color}">
       <div class="label">${esc(run.name)}${run.detail ? ` <small>· ${esc(run.detail)}</small>` : ""}<br><small>${run.paused ? "Paused" : "Focus"}: ${run.planned} min</small></div>
       <div class="clock" data-clock>${clock(run.remaining)}</div>
       <button class="round" data-act="pause" title="${run.paused ? "Resume" : "Pause"}">${run.paused ? ICON.play : ICON.pause}</button>
@@ -293,14 +299,14 @@ function tabsHTML() {
     <button class="quit" data-act="askquit" title="Quit KaizeNotch">${ICON.close}</button></div>`;
 }
 
-function tileHTML(s) {
+function tileHTML(s, index) {
   const c = cat(s.category).color;
   const mins = S.todayMinutes[s.name] || 0;
   const pct = Math.min(100, (mins / s.minutes) * 100);
   const isRunning = run && run.name === s.name;
   const done = s.isHabit && doneToday(s);
   const tick = s.isHabit ? `<button class="${done ? "done" : ""}" data-act="tick" data-name="${esc(s.name)}" title="Already did it">${ICON.check}</button>` : "";
-  return `<div class="tile ${isRunning ? "running" : ""}" role="button" tabindex="0" style="--c:${esc(c)}" data-act="tap" data-name="${esc(s.name)}">
+  return `<div class="tile ${isRunning ? "running" : ""}" role="button" tabindex="0" style="--c:${esc(c)};--i:${index}" data-act="tap" data-name="${esc(s.name)}">
     <span class="corner">${tick}<button data-act="edit" data-name="${esc(s.name)}" title="Edit">${ICON.pencil}</button></span>
     <span class="name">${esc(s.name)}</span>
     <span class="meta">${done ? '<span class="ok">✓</span>' : ""}${timeLabel(mins)} today · ${s.minutes}m${s.options && s.options.length ? ` · ${s.options.length} choices` : ""}</span>
@@ -360,7 +366,7 @@ function formHTML() {
   }
   if (ui.choosing) {
     const s = ui.choosing, d = doneSet();
-    const buttons = s.options.map((o) => `<button class="${d.has(s.name + "|" + o) ? "done" : ""}" data-act="choose" data-opt="${esc(o)}">${esc(o)}</button>`).join("");
+    const buttons = s.options.map((o, i) => `<button style="--i:${i}" class="${d.has(s.name + "|" + o) ? "done" : ""}" data-act="choose" data-opt="${esc(o)}">${esc(o)}</button>`).join("");
     return `<div class="form" style="--c:${esc(cat(s.category).color)}">
       <div class="row"><span>${esc(s.name)}</span><span style="color:var(--muted)">${ui.choosingTick ? "Which one did you do?" : "Which one now?"}</span></div>
       <div class="choices">${buttons}</div>
@@ -377,9 +383,21 @@ function renderPanel() {
     : `<button class="tile add" data-act="add" title="Add an activity">+</button>`;
   const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today · v${esc(S.version || "?")}</span>`;
   $("#panel").innerHTML = `${statusHTML()}${tabsHTML()}${formHTML()}
-    <div class="grid">${list.map(tileHTML).join("")}${add}</div>
+    <div class="grid${enterGrid ? " enter" : ""}">${list.map(tileHTML).join("")}${add}</div>
     <div class="foot">${foot}<span class="links">${share.available ? `<button data-act="share">${share.state === "on" ? '<span class="live"></span>Sharing is on' : "Share on the web"}</button>` : ""}<button data-act="report">Open my report ↗</button></span></div>`;
+  enterGrid = false;
+  // forms and the status row animate in only when they are new, not on every redraw
+  const form = document.querySelector("#panel .form"), status = document.querySelector("#panel .status");
+  const formKind = ui.quitting ? "quit" : ui.sharing ? "share" : ui.addingCat ? "cat" : ui.editing !== null ? "edit" : ui.choosing ? "choose:" + ui.choosing.name : "";
+  const statusKind = run ? "run:" + run.name : rest ? "rest" : "";
+  if (form && formKind !== lastForm) form.classList.add("enter");
+  if (status && statusKind !== lastStatus) status.classList.add("enter");
+  lastForm = formKind;
+  lastStatus = statusKind;
 }
+
+let enterGrid = false;            // the next panel draw drops the tiles in one after another
+let lastForm = "", lastStatus = "";
 
 function render() {
   $("#notch").classList.toggle("collapsed", !ui.open);
@@ -392,12 +410,20 @@ function render() {
 
 // Only the numbers, every 250 ms, so typing and hovering are never interrupted
 function renderClockOnly() {
-  renderPill();
-  const t = run || rest;
+  const t0 = run || rest;
+  if (!t0) return;
+  const pill = $("#pill"), cls = urgencyClass();
+  if (pill.className !== cls) pill.className = cls;          // only when it changes, so the motion is not restarted
+  const pc = pill.querySelector(".clock");
+  if (pc) pc.textContent = clock(t0.remaining); else renderPill();
   const el = document.querySelector("[data-clock]");
-  if (el && t) el.textContent = clock(t.remaining);
-  const st = document.querySelector(".status");
-  if (st && run) st.className = "status " + urgency();
+  if (el) el.textContent = clock(t0.remaining);
+  const st = document.querySelector("#panel .status");
+  if (st && run) {
+    st.classList.toggle("soon", urgency() === "soon");
+    st.classList.toggle("final", urgency() === "final");
+    st.classList.toggle("last10", run.remaining <= 10 && !run.paused);
+  }
 }
 
 // Ask Rust for a window as tall as the panel
@@ -430,18 +456,42 @@ function setHover(inside) {
   clearTimeout(openTimer);
   if (inside) {
     // a short wait before opening, so the pill can be grabbed and dragged
-    if (!ui.open) openTimer = setTimeout(() => { if (!dragging && hovering && !ui.open) { ui.open = true; lastHeight = 0; render(); } }, 220);
+    if (!ui.open) openTimer = setTimeout(() => { if (!dragging && hovering && !ui.open) { openPanel(); } }, 220);
     return;
   }
   // keep it open while typing or picking a choice, even if the mouse wanders off
   if (typing() || ui.choosing) return;
-  collapseTimer = setTimeout(() => {
+  collapseTimer = setTimeout(closePanel, 350);
+}
+
+// The window changes size at once (the system does that), so the motion is in the content:
+// the panel springs in from the top, and fades out just before the window shrinks back to the pill.
+function openPanel() {
+  const notch = $("#notch");
+  ui.open = true;
+  lastHeight = 0;
+  enterGrid = true;
+  lastForm = lastStatus = "";
+  notch.classList.remove("closing", "pop");
+  notch.classList.add("opening");
+  render();
+  setTimeout(() => notch.classList.remove("opening"), 600);
+}
+
+function closePanel() {
+  const notch = $("#notch");
+  notch.classList.add("closing");
+  setTimeout(() => {
+    if (hovering && !dragging) { notch.classList.remove("closing"); return; }   // the mouse came back
     ui.open = false;
     ui.problem = "";
     lastHeight = 0;
+    notch.classList.remove("closing", "opening");
+    notch.classList.add("pop");
     invoke("set_expanded", { expanded: false });
     render();
-  }, 350);
+    setTimeout(() => notch.classList.remove("pop"), 500);
+  }, 130);
 }
 listen("hover", (e) => setHover(e.payload));
 document.addEventListener("mouseenter", () => setHover(true));
@@ -471,7 +521,7 @@ document.addEventListener("click", async (ev) => {
     case "pause": togglePause(); break;
     case "stop": await stop(false); break;
     case "skip": endBreak(false); break;
-    case "tab": ui.tab = el.dataset.key; ui.adding = false; render(); break;
+    case "tab": if (ui.tab !== el.dataset.key) enterGrid = true; ui.tab = el.dataset.key; ui.adding = false; render(); break;
     case "rmcat": await removeCategory(el.dataset.key); break;
     case "add": ui.editing = null; ui.adding = true; render(); focusFirstInput(); break;
     case "addcat": ui.addingCat = true; ui.catName = ""; ui.catProblem = ""; render(); focusFirstInput(); break;
@@ -531,6 +581,15 @@ document.addEventListener("keydown", async (ev) => {
   else if (id === "editName" || id === "editOptions") await saveEdit();
 });
 document.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
+// The spotlight inside a tile follows the mouse
+document.addEventListener("pointermove", (ev) => {
+  const tile = ev.target.closest && ev.target.closest(".tile");
+  if (!tile) return;
+  const r = tile.getBoundingClientRect();
+  tile.style.setProperty("--mx", ev.clientX - r.left + "px");
+  tile.style.setProperty("--my", ev.clientY - r.top + "px");
+});
 
 // Dragging: hold the pill, or the grip at the top left of the panel, and move the mouse
 document.addEventListener("mousedown", (ev) => {
