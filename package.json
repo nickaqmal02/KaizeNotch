@@ -1,0 +1,16 @@
+{
+  "name": "kaizenotch",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Build tooling for KaizeNotch (the app itself is Rust + plain HTML, no bundler)",
+  "license": "MIT",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon scripts/icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}

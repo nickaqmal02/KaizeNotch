@@ -1,0 +1,9 @@
+# build output
+/src-tauri/target/
+/src-tauri/gen/
+/node_modules/
+# local only
+.claude/
+.env
+.DS_Store
+*.log
