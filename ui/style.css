@@ -69,6 +69,10 @@ button, input, select { font: inherit; color: inherit; }
 .round svg { width: 14px; height: 14px; }
 
 .toprow { display: flex; align-items: center; gap: 6px; }
+.grip { flex: none; color: var(--muted); cursor: grab; font-size: 14px; line-height: 1; padding: 4px 2px; border-radius: 6px; }
+.grip:hover { color: var(--text); background: var(--tile); }
+.grip:active { cursor: grabbing; }
+#pill { cursor: grab; }
 .toprow .tabs { flex: 1; min-width: 0; }
 .quit { flex: none; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .quit:hover { background: var(--red); color: #fff; }

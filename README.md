@@ -31,6 +31,7 @@ It needs Windows 10 or 11. The installer fetches Microsoft's WebView2 runtime if
 | Do this | What happens |
 |---|---|
 | Hover the pill | The panel opens |
+| Hold the pill and move the mouse | Drag it anywhere; it stays there next time. The ⠿ grip at the top left of the panel does the same, and a double-click on the grip puts it back at the top centre |
 | Tap a tile | A pomodoro starts. Activities with choices ask first (Pray → Asar) |
 | ✓ on a tile | "I already did it": logs the habit without running the timer |
 | Pencil on a tile | Change the name, length, break, tab, choices, or habit / time only |
@@ -52,7 +53,7 @@ Everything stays on your computer, in plain files:
 | macOS (for development) | `~/Library/Application Support/KaizeNotch/` |
 
 `subjects.json` (activities), `categories.json` (your tabs), `study_sessions.csv` (one row per
-session) and `report.html` (the report, rebuilt after every session).
+session), `report.html` (the report, rebuilt after every session) and `window.json` (where you dragged the pill).
 
 ## Sharing (off until you turn it on)
 

@@ -289,7 +289,7 @@ function tabsHTML() {
     const x = on && !c.builtIn ? `<span data-act="rmcat" data-key="${esc(c.key)}" title="Remove this tab">×</span>` : "";
     return `<button class="tab ${on ? "on" : ""}" style="--c:${esc(c.color)}" data-act="tab" data-key="${esc(c.key)}"><span class="swatch"></span>${esc(c.label)}${x}</button>`;
   }).join("");
-  return `<div class="toprow"><div class="tabs">${tabs}<button class="tab add" data-act="addcat" title="Add a category">+</button></div>
+  return `<div class="toprow"><span class="grip" data-drag title="Drag to move · double-click to put it back at the top centre">⠿</span><div class="tabs">${tabs}<button class="tab add" data-act="addcat" title="Add a category">+</button></div>
     <button class="quit" data-act="askquit" title="Quit KaizeNotch">${ICON.close}</button></div>`;
 }
 
@@ -419,10 +419,18 @@ function focusFirstInput() {
 }
 
 // ---------- open / close ----------
+let dragging = false;   // the system is moving the window: do not open, close or resize it meanwhile
+let openTimer = null;
+let hovering = false;
+
 function setHover(inside) {
+  hovering = inside;
+  if (dragging) return;
   clearTimeout(collapseTimer);
+  clearTimeout(openTimer);
   if (inside) {
-    if (!ui.open) { ui.open = true; lastHeight = 0; render(); }
+    // a short wait before opening, so the pill can be grabbed and dragged
+    if (!ui.open) openTimer = setTimeout(() => { if (!dragging && hovering && !ui.open) { ui.open = true; lastHeight = 0; render(); } }, 220);
     return;
   }
   // keep it open while typing or picking a choice, even if the mouse wanders off
@@ -523,6 +531,34 @@ document.addEventListener("keydown", async (ev) => {
   else if (id === "editName" || id === "editOptions") await saveEdit();
 });
 document.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
+// Dragging: hold the pill, or the grip at the top left of the panel, and move the mouse
+document.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0) return;
+  if (ev.target.closest("[data-drag]") || ev.target.closest("#pill")) {
+    ev.preventDefault();
+    if (ev.detail >= 2 && ev.target.closest("[data-drag]")) { invoke("reset_position"); return; }
+    dragging = true;
+    lastMoved = Date.now();
+    clearTimeout(openTimer);
+    clearTimeout(collapseTimer);
+    invoke("drag_window");
+  }
+});
+// The drag is over when the mouse is seen again with no button held
+function dragEnded(ev) {
+  if (!dragging || ev.buttons !== 0) return;
+  dragging = false;
+  setHover(hovering);
+}
+// Fallback if the page never sees the mouse again: the window has stopped moving for a while
+let lastMoved = 0;
+listen("moved", () => { lastMoved = Date.now(); });
+setInterval(() => {
+  if (dragging && Date.now() - lastMoved > 900) { dragging = false; setHover(hovering); }
+}, 300);
+document.addEventListener("mousemove", dragEnded);
+document.addEventListener("mouseup", dragEnded);
 
 // ---------- go ----------
 (async () => {

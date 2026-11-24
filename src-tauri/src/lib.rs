@@ -12,8 +12,8 @@ use serde::Serialize;
 use share::{Share, View};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use store::{CustomCategory, NewSession, Store, Subject};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -30,6 +30,56 @@ const TRAY_ID: &str = "kaizenotch";
 pub struct App {
     folder: PathBuf,
     share: Option<Arc<Share>>,
+    placement: Mutex<Placement>,
+}
+
+// Where the user dragged the pill: the middle of its top edge, in screen pixels. None = top centre.
+struct Placement {
+    anchor: Option<(i32, i32)>,
+    placed_at: Instant, // when the app last moved the window itself (those moves are not drags)
+}
+
+impl Placement {
+    fn load(folder: &std::path::Path) -> Placement {
+        let anchor = std::fs::read_to_string(folder.join("window.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| Some((v["x"].as_i64()? as i32, v["y"].as_i64()? as i32)));
+        Placement {
+            anchor,
+            placed_at: Instant::now(),
+        }
+    }
+}
+
+fn save_anchor(folder: &std::path::Path, anchor: Option<(i32, i32)>) {
+    let path = folder.join("window.json");
+    match anchor {
+        Some((x, y)) => {
+            let _ = store::write_atomic(
+                &path,
+                serde_json::json!({"x": x, "y": y}).to_string().as_bytes(),
+            );
+        }
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+// Top-left corner for a window of this size: centred under the anchor, kept fully on the screen.
+// anchor = middle of the top edge; screen = (x, y, width, height); all in screen pixels.
+pub fn window_origin(
+    anchor: (i32, i32),
+    size: (i32, i32),
+    screen: (i32, i32, i32, i32),
+) -> (i32, i32) {
+    let max_x = (screen.0 + screen.2 - size.0).max(screen.0);
+    let max_y = (screen.1 + screen.3 - size.1).max(screen.1);
+    (
+        (anchor.0 - size.0 / 2).clamp(screen.0, max_x),
+        anchor.1.clamp(screen.1, max_y),
+    )
 }
 
 impl App {
@@ -236,6 +286,12 @@ fn set_expanded(window: WebviewWindow, expanded: bool, height: Option<f64>) {
         PILL
     };
     place(&window, size);
+    // opening or closing is a good moment to save where the pill was dragged to
+    let app = window.state::<App>();
+    let anchor = app.placement.lock().unwrap().anchor;
+    if anchor.is_some() {
+        save_anchor(&app.folder, anchor);
+    }
 }
 
 #[tauri::command]
@@ -321,20 +377,82 @@ fn open_report_now(handle: &AppHandle) {
 
 // MARK: window
 
-// Top centre of the screen the window is on, a few pixels below the edge (below the menu bar on a Mac)
+// Puts the window under its anchor: where the user dragged it, or the top centre of the screen
+// (a few pixels below the edge; below the menu bar on a Mac).
 fn place(window: &WebviewWindow, (w, h): (f64, f64)) {
-    let Ok(Some(monitor)) = window
-        .current_monitor()
-        .or_else(|_| window.primary_monitor())
-    else {
-        return;
+    let app = window.state::<App>();
+    let monitors = window.available_monitors().unwrap_or_default();
+    let inside = |m: &tauri::Monitor, (x, y): (i32, i32)| {
+        let (p, s) = (m.position(), m.size());
+        x >= p.x && x < p.x + s.width as i32 && y >= p.y && y < p.y + s.height as i32
     };
+    let mut placement = app.placement.lock().unwrap();
+    // a saved spot on a screen that is no longer plugged in: back to the top centre
+    if placement
+        .anchor
+        .is_some_and(|a| !monitors.iter().any(|m| inside(m, a)))
+    {
+        placement.anchor = None;
+    }
+    let monitor = match placement.anchor {
+        Some(a) => monitors.iter().find(|m| inside(m, a)).cloned(),
+        None => window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| window.primary_monitor().ok().flatten()),
+    };
+    let Some(monitor) = monitor else { return };
     let scale = monitor.scale_factor();
+    let (mp, ms) = (monitor.position(), monitor.size());
     let top = if cfg!(target_os = "macos") { 34.0 } else { 6.0 };
-    let x = monitor.position().x + ((monitor.size().width as f64 - w * scale) / 2.0).round() as i32;
-    let y = monitor.position().y + (top * scale).round() as i32;
+    let anchor = placement.anchor.unwrap_or((
+        mp.x + ms.width as i32 / 2,
+        mp.y + (top * scale).round() as i32,
+    ));
+    let size = ((w * scale).round() as i32, (h * scale).round() as i32);
+    let (x, y) = window_origin(
+        anchor,
+        size,
+        (mp.x, mp.y, ms.width as i32, ms.height as i32),
+    );
+    placement.placed_at = Instant::now();
+    drop(placement);
     let _ = window.set_size(LogicalSize::new(w, h));
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+// The user dragged the window: remember the middle of its top edge
+fn on_moved(window: &tauri::Window, pos: &PhysicalPosition<i32>) {
+    let app = window.state::<App>();
+    let mut placement = app.placement.lock().unwrap();
+    if placement.placed_at.elapsed() < Duration::from_millis(300) {
+        return; // the app's own move (opening or closing the panel)
+    }
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    placement.anchor = Some((pos.x + size.width as i32 / 2, pos.y));
+    let _ = window.emit("moved", ()); // the page waits for the drag to settle before opening
+}
+
+// Mouse down on the pill or the grip: the system moves the window with the mouse
+#[tauri::command]
+fn drag_window(window: WebviewWindow) {
+    let _ = window.start_dragging();
+}
+
+// Double-click on the grip: back to the top centre
+#[tauri::command]
+fn reset_position(window: WebviewWindow, app: tauri::State<App>) {
+    app.placement.lock().unwrap().anchor = None;
+    save_anchor(&app.folder, None);
+    if let (Ok(size), Ok(scale)) = (window.outer_size(), window.scale_factor()) {
+        place(
+            &window,
+            (size.width as f64 / scale, size.height as f64 / scale),
+        );
+    }
 }
 
 // The page cannot always see the mouse while the window is not focused, so Rust watches the cursor
@@ -478,7 +596,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(App { folder, share })
+        .manage(App {
+            placement: Mutex::new(Placement::load(&folder)),
+            folder,
+            share,
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Moved(pos) = event {
+                on_moved(window, pos);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_state,
             save_subjects,
@@ -493,7 +620,9 @@ pub fn run() {
             share_stop,
             share_copy,
             share_open,
-            quit_app
+            quit_app,
+            drag_window,
+            reset_position
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -548,6 +677,25 @@ pub fn report_json_cli(args: &[String]) -> Option<String> {
 mod tests {
     // Windows' web view keeps old copies of files it has seen under the same address, so an update
     // would show the previous version's page. Every address carries the version to prevent that.
+    #[test]
+    fn the_window_stays_under_its_anchor_and_on_the_screen() {
+        let screen = (0, 0, 1920, 1080);
+        // pill and panel are both centred under the same point
+        assert_eq!(super::window_origin((960, 6), (220, 40), screen), (850, 6));
+        assert_eq!(super::window_origin((960, 6), (560, 320), screen), (680, 6));
+        // dragged to the right edge and the bottom: pushed back inside
+        assert_eq!(
+            super::window_origin((1900, 1070), (560, 320), screen),
+            (1360, 760)
+        );
+        assert_eq!(super::window_origin((5, 500), (220, 40), screen), (0, 500));
+        // a second screen to the left has negative coordinates
+        assert_eq!(
+            super::window_origin((-960, 6), (220, 40), (-1920, 0, 1920, 1080)),
+            (-1070, 6)
+        );
+    }
+
     #[test]
     fn page_addresses_carry_the_app_version() {
         let v = env!("CARGO_PKG_VERSION");
