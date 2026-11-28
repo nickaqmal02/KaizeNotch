@@ -281,7 +281,19 @@ fn log_session(
 #[tauri::command]
 fn set_expanded(window: WebviewWindow, expanded: bool, height: Option<f64>) {
     let size = if expanded {
-        (PANEL_WIDTH, height.unwrap_or(320.0).clamp(120.0, 640.0))
+        // never taller than the screen it is on (small laptops at 150% scaling); the page scrolls
+        let room = window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.size().height as f64 / m.scale_factor() - 60.0)
+            .unwrap_or(640.0);
+        (
+            PANEL_WIDTH,
+            height
+                .unwrap_or(320.0)
+                .clamp(120.0, room.clamp(240.0, 640.0)),
+        )
     } else {
         PILL
     };
@@ -364,6 +376,41 @@ fn share_open(handle: AppHandle, app: tauri::State<App>) {
 #[tauri::command]
 fn quit_app(handle: AppHandle) {
     handle.exit(0);
+}
+
+// Is a newer KaizeNotch out? Asks GitHub where "latest release" points (no account, no data sent).
+const RELEASES: &str = "https://github.com/nickaqmal02/KaizeNotch/releases/latest";
+
+pub fn newer(candidate: &str, current: &str) -> bool {
+    let parts = |v: &str| -> Option<Vec<u32>> {
+        v.trim_start_matches('v')
+            .split('.')
+            .map(|p| p.parse().ok())
+            .collect()
+    };
+    match (parts(candidate), parts(current)) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
+#[tauri::command]
+async fn latest_version() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("KaizeNotch")
+        .build()
+        .ok()?;
+    // .../releases/latest redirects to .../releases/tag/v0.1.5
+    let response = client.get(RELEASES).send().await.ok()?;
+    let tag = response.url().path().rsplit('/').next()?.to_string();
+    let version = tag.strip_prefix('v')?.to_string();
+    newer(&version, env!("CARGO_PKG_VERSION")).then_some(version)
+}
+
+#[tauri::command]
+fn open_update(handle: AppHandle) {
+    let _ = handle.opener().open_url(RELEASES, None::<&str>);
 }
 
 fn open_report_now(handle: &AppHandle) {
@@ -579,7 +626,15 @@ fn on_tray_menu(handle: &AppHandle, id: &str) {
         "data" => {
             let _ = handle.opener().reveal_item_in_dir(&app.folder);
         }
-        "quit" => handle.exit(0),
+        "quit" => {
+            // the page saves a running session, then quits; if it does not answer, quit anyway
+            let _ = handle.emit("quit-request", ());
+            let h = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(1500));
+                h.exit(0);
+            });
+        }
         _ => {}
     }
 }
@@ -590,6 +645,10 @@ pub fn run() {
     let folder = store::default_folder();
     let share = share::api_url().map(|api| Arc::new(Share::new(api, folder.clone())));
     tauri::Builder::default()
+        // opened a second time: keep the one that is running and make its pill wave
+        .plugin(tauri_plugin_single_instance::init(|handle, _, _| {
+            let _ = handle.emit("poke", ());
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
@@ -622,7 +681,9 @@ pub fn run() {
             share_open,
             quit_app,
             drag_window,
-            reset_position
+            reset_position,
+            latest_version,
+            open_update
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -694,6 +755,16 @@ mod tests {
             super::window_origin((-960, 6), (220, 40), (-1920, 0, 1920, 1080)),
             (-1070, 6)
         );
+    }
+
+    #[test]
+    fn only_a_higher_version_counts_as_an_update() {
+        assert!(super::newer("0.1.5", "0.1.4"));
+        assert!(super::newer("0.2.0", "0.1.9"));
+        assert!(super::newer("0.1.10", "0.1.9"));
+        assert!(!super::newer("0.1.4", "0.1.4"));
+        assert!(!super::newer("0.1.3", "0.1.4"));
+        assert!(!super::newer("latest", "0.1.4"));
     }
 
     #[test]

@@ -40,6 +40,10 @@ It needs Windows 10 or 11. The installer fetches Microsoft's WebView2 runtime if
 | **✕** (top right of the panel) | Quit KaizeNotch |
 | Tray icon | The same: Open My Report, Share My Report on the Web, Start at Login, Quit |
 
+When a newer version is out, the bottom of the panel says so (**v0.1.6 is out ↗**). To update:
+with Scoop, quit KaizeNotch (✕) and run `scoop update` then `scoop update kaizenotch`; otherwise
+download and run the new installer. Opening KaizeNotch twice keeps the one already running.
+
 The four built-in tabs are Academic, Health, Soul and Personal. Academic activities share one
 "Study" habit; every other activity is its own habit unless you turn that off.
 
@@ -54,6 +58,9 @@ Everything stays on your computer, in plain files:
 
 `subjects.json` (activities), `categories.json` (your tabs), `study_sessions.csv` (one row per
 session), `report.html` (the report, rebuilt after every session) and `window.json` (where you dragged the pill).
+
+The only thing the app does on the internet without being asked is one check, at start, of where
+GitHub's "latest release" points. Nothing about you is sent.
 
 ## Sharing (off until you turn it on)
 

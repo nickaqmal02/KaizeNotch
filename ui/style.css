@@ -50,6 +50,9 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---- the panel ---- */
 #panel { padding: 12px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+/* more activities than the screen has room for: the panel scrolls inside the window */
+#panel { max-height: 100%; overflow-y: auto; scrollbar-width: none; }
+#panel > * { flex: none; }
 
 .status {
   display: flex; align-items: center; gap: 10px;
@@ -150,6 +153,7 @@ button, input, select { font: inherit; color: inherit; }
 .foot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); }
 .foot button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 11px; }
 .foot button:hover { color: var(--text); }
+.foot .update { color: var(--green); font-weight: 600; }
 .foot .links { display: flex; gap: 8px; align-items: center; }
 .foot .live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; }
 .form .row > span:nth-child(2) { line-height: 1.35; }

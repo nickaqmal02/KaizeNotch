@@ -26,6 +26,7 @@ let run = null;    // { name, detail, category, planned, startedAt, endAt, remai
 let rest = null;   // { name, endAt, remaining, paused }
 let collapseTimer = null;
 let lastHeight = 0;
+let update = null;   // a newer version's number, when GitHub has one
 
 const MAX_NAME = 24;
 const $ = (sel) => document.querySelector(sel);
@@ -381,7 +382,7 @@ function renderPanel() {
   const add = ui.adding
     ? `<div class="tile add" style="padding:8px"><input type="text" id="newName" maxlength="${MAX_NAME}" placeholder="Name, then Enter" value="${esc(ui.newName)}" style="width:100%;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;outline:none"></div>`
     : `<button class="tile add" data-act="add" title="Add an activity">+</button>`;
-  const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today · v${esc(S.version || "?")}</span>`;
+  const foot = ui.flash ? `<span class="flash">${esc(ui.flash)}</span>` : ui.problem ? `<span style="color:#ff8c85">${esc(ui.problem)}</span>` : `<span>${timeLabel(todayTotal())} today · v${esc(S.version || "?")}${update ? ` <button class="update" data-act="update" title="Open the download page. With Scoop: quit KaizeNotch, then scoop update; scoop update kaizenotch">v${esc(update)} is out ↗</button>` : ""}</span>`;
   $("#panel").innerHTML = `${statusHTML()}${tabsHTML()}${formHTML()}
     <div class="grid${enterGrid ? " enter" : ""}">${list.map(tileHTML).join("")}${add}</div>
     <div class="foot">${foot}<span class="links">${share.available ? `<button data-act="share">${share.state === "on" ? '<span class="live"></span>Sharing is on' : "Share on the web"}</button>` : ""}<button data-act="report">Open my report ↗</button></span></div>`;
@@ -405,7 +406,20 @@ function render() {
   if (ui.open) {
     renderPanel();
     fit();
+    // a form was closed (Save, Cancel, Esc) while the mouse was elsewhere: do not stay open forever
+    if (!hovering && !dragging && !typing() && !ui.choosing) {
+      clearTimeout(collapseTimer);
+      collapseTimer = setTimeout(closePanel, 1200);
+    }
   }
+}
+
+// Pick up a new day (the "today" numbers) and anything changed in the files, without a redraw if nothing did
+async function refreshState() {
+  try {
+    const fresh = await invoke("get_state");
+    if (JSON.stringify(fresh) !== JSON.stringify(S)) { S = fresh; render(); }
+  } catch (_) { /* try again next time */ }
 }
 
 // Only the numbers, every 250 ms, so typing and hovering are never interrupted
@@ -476,9 +490,11 @@ function openPanel() {
   notch.classList.add("opening");
   render();
   setTimeout(() => notch.classList.remove("opening"), 600);
+  refreshState();
 }
 
 function closePanel() {
+  if (typing() || ui.choosing) return;   // started typing in the meantime
   const notch = $("#notch");
   notch.classList.add("closing");
   setTimeout(() => {
@@ -534,6 +550,7 @@ document.addEventListener("click", async (ev) => {
     case "brk+": ui.edit.breakMinutes = Math.min(60, ui.edit.breakMinutes + 1); render(); break;
     case "brk-": ui.edit.breakMinutes = Math.max(0, ui.edit.breakMinutes - 1); render(); break;
     case "report": invoke("open_report"); break;
+    case "update": invoke("open_update"); break;
     case "askquit": cancelEdit(); ui.quitting = true; render(); break;
     case "quit": if (run) await stop(false); invoke("quit_app"); break;
     case "share":
@@ -575,6 +592,8 @@ document.addEventListener("change", (ev) => {
 document.addEventListener("keydown", async (ev) => {
   const id = ev.target.id;
   if (ev.key === "Escape") { ui.choosing = null; cancelEdit(); return; }
+  // tiles are focusable: Enter or Space starts them, like a click
+  if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches && ev.target.matches(".tile[role=button]")) { ev.preventDefault(); ev.target.click(); return; }
   if (ev.key !== "Enter") return;
   if (id === "newName") await addSubject();
   else if (id === "catName") await addCategory();
@@ -619,9 +638,25 @@ setInterval(() => {
 document.addEventListener("mousemove", dragEnded);
 document.addEventListener("mouseup", dragEnded);
 
+// Tray -> Quit: save a running session first (the ✕ does the same)
+listen("quit-request", async () => {
+  try { if (run) await stop(false); } finally { invoke("quit_app"); }
+});
+// KaizeNotch was opened again while it is already running: wave, so the pill is easy to find
+listen("poke", () => {
+  const notch = $("#notch");
+  notch.classList.remove("pop");
+  void notch.offsetWidth;
+  notch.classList.add("pop");
+  setTimeout(() => notch.classList.remove("pop"), 500);
+});
+setInterval(() => { if (!run && !rest) refreshState(); }, 5 * 60000);
+
 // ---------- go ----------
 (async () => {
   S = await invoke("get_state");
   share = await invoke("share_info");
   render();
+  update = await invoke("latest_version").catch(() => null);
+  if (update && ui.open) render();
 })();
